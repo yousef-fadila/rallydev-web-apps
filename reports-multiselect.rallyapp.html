@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Grid data</title>
+
+    <script type="text/javascript" src="/apps/2.0p2/sdk.js"></script>
+	<script type="text/javascript" src="https://floating-snow-6450.herokuapp.com/utils.js"></script>
+	<script type="text/javascript" src="https://floating-snow-6450.herokuapp.com/swfobject.js"></script>
+	<script type="text/javascript" src="https://floating-snow-6450.herokuapp.com/downloadify.min.js"></script>
+	
+    <script type="text/javascript">	
+	
+	var csvdata = [];
+	
+        Rally.onReady(function() {
+
+            Ext.define('CustomApp', {
+                extend: 'Rally.app.App',
+                componentCls: 'app',
+				autoScroll: 'false',		
+                 items: [
+                    {
+                        xtype: 'container',
+                        itemId: 'ReleaseFilter',
+						cls: 'StandardMargin'
+                    },
+                    {
+                        xtype: 'container',
+                        itemId: 'IterationFilter',
+						cls: 'StandardMargin'
+						
+                    },
+					{
+                        xtype: 'container',
+                        itemId: 'StateFilter',
+						cls: 'StandardMargin'
+                    },
+					{
+					 xtype: 'container',
+                        itemId: 'ClickButton',
+						cls: 'StandardMargin'
+					},
+					{
+                        xtype: 'container',
+                        itemId: 'grid',
+                        width: '80%',
+						cls: 'StandardMargin'
+                    }
+                ],
+				
+                launch: function() {
+				       this.down('#ReleaseFilter').add({
+                        xtype: 'checkbox',
+                        cls: 'filter',
+                        boxLabel: 'Filter table by release',
+                        id: 'ReleaseCheckbox',
+                    },
+					 {
+                        xtype: 'rallyreleasecombobox',   
+						id: 'Releasecombobox',					
+                    });		
+					    this.down('#IterationFilter').add({
+                        xtype: 'checkbox',
+                        cls: 'filter',
+                        boxLabel: 'Filter table by iteration',
+                        id: 'IterationCheckbox',
+                    },
+					 {
+                        xtype: 'rallyiterationcombobox',   
+						id: 'Iterationcombobox',					
+                    });
+            
+			 this.down('#StateFilter').add(
+			{
+            xtype: 'fieldcontainer',
+            fieldLabel: 'State',
+            defaultType: 'checkboxfield',
+            items: [
+			    {
+                    boxLabel  : 'Backlog',
+                    name      : 'state',
+                    inputValue: '1',
+                    id        : 'checkbox0'
+                },
+                {
+                    boxLabel  : 'Defined',
+                    name      : 'state',
+                    inputValue: '1',
+                    id        : 'checkbox1'
+                }, {
+                    boxLabel  : 'In-Progress',
+                    name      : 'state',
+                    inputValue: '2',
+                    id        : 'checkbox2'
+                }, {
+                    boxLabel  : 'Completed',
+                    name      : 'state',
+                    inputValue: '3',
+                    id        : 'checkbox3'
+                },
+				{
+                    boxLabel  : 'Accepted',
+                    name      : 'state',
+                    inputValue: '3',
+					checked   : true,
+                    id        : 'checkbox4'
+                }
+				]
+			});
+			
+		this.down('#ClickButton').add(		
+         {
+			xtype: 'rallybutton',
+			text: 'Generate Report',
+			scope: this,
+			handler: function() {
+				this.generate_report();
+        }});
+        },          
+		
+		_getFilter: function()
+		{
+			var filters = null;
+		   
+		 if (Ext.getCmp('ReleaseCheckbox').getValue()) {
+                filters = this.down('#Releasecombobox').getQueryFromSelected();
+         }
+		
+		 if (Ext.getCmp('IterationCheckbox').getValue()) {
+                query = this.down('#Iterationcombobox').getQueryFromSelected();
+				if (filters == null)
+				filters = query;
+				else
+				filters = filters.and(query);
+         }
+	 
+		  var statusFilter = null;
+		  
+		   if (Ext.getCmp('checkbox0').getValue()) {
+		   
+                query = new Rally.data.QueryFilter({
+									property: "ScheduleState",
+									operator: "=",
+									value: "Backlog"
+								});
+								
+				if (statusFilter == null) 
+				statusFilter = query;
+				else
+				statusFilter = statusFilter.or(query);
+         }
+		 
+		   if (Ext.getCmp('checkbox1').getValue()) {
+		   
+                query = new Rally.data.QueryFilter({
+									property: "ScheduleState",
+									operator: "=",
+									value: "Defined"
+								});
+								
+				if (statusFilter == null) 
+				statusFilter = query;
+				else
+				statusFilter = statusFilter.or(query);
+         }
+		
+		if (Ext.getCmp('checkbox2').getValue()) {
+		   
+                query = new Rally.data.QueryFilter({
+									property: "ScheduleState",
+									operator: "=",
+									value: "In-Progress"
+								});
+								
+				if (statusFilter == null) 
+				statusFilter = query;
+				else
+				statusFilter = statusFilter.or(query);
+         }
+		    if (Ext.getCmp('checkbox3').getValue()) {
+		   
+                query = new Rally.data.QueryFilter({
+									property: "ScheduleState",
+									operator: "=",
+									value: "Completed"
+								});
+								
+				if (statusFilter == null) 
+				statusFilter = query;
+				else
+				statusFilter = statusFilter.or(query);
+         }
+		    if (Ext.getCmp('checkbox4').getValue()) {
+		   
+                query = new Rally.data.QueryFilter({
+									property: "ScheduleState",
+									operator: "=",
+									value: "Accepted"
+								});
+								
+				if (statusFilter == null) 
+				statusFilter = query;
+				else
+				statusFilter = statusFilter.or(query);
+         }
+		 
+		 
+		// avoid filtering by status if nither release no iteration is selected.
+		 if (filters != null && statusFilter != null)
+		     filters = filters.and(statusFilter);
+		 
+		 console.log(filters);
+        return filters;		   
+                    	
+          				
+		},
+		
+		generate_report : function (){
+					
+					var tableFilters = this._getFilter();	
+					if (tableFilters == null)
+					{
+					   Ext.Msg.alert('Missing Release/Iteration', 'Neither Release nor Iteration is selected!');
+					   return;
+					}
+					this.down('#ClickButton').child().setText("Please wait...");
+                    Ext.create('Rally.data.WsapiDataStore', {
+                        model: 'UserStory',
+                        autoLoad: true,
+						context: {
+						projectScopeUp: false,
+						},
+						limit : Infinity,
+                        listeners: {
+                            load: this._onDataLoaded,
+                            scope: this
+                        },
+						filters: tableFilters,
+						fetch: ['FormattedID','Name','ScheduleState','Release','Iteration','PlanEstimate','PlanDevEstDays','PlanQAEstDays','TaskEstimateTotal'],
+                    });
+				},
+				
+                _onDataLoaded: function(store1, data) {
+                    var records = [];
+					var sumPlanEst = 0;
+					var sumDevEst = 0;
+					var sumQaEst = 0;
+					var sumTaskEst = 0;
+				csvdata = new Array();
+				 csvdata.push('FormattedID, Name, Schedule State, Release, Iteration, Project, Plan Est, Plan Dev Est, Plan QA Est');	
+				 
+                  Ext.Array.each(data, function(record) {
+                        //Perform custom actions with the data here
+                        //Calculations, etc.
+						var linkBuilder = Ext.create('Rally.util.DetailLinkBuilder').inFrame(true);
+					
+					    var link =  linkBuilder.build(record.get('FormattedID'), record.get('_ref'), false);
+						//workaround for rally bug, even though pass abosulte not relatvie it still add its host.
+						link = link.replace("https://rally1.rallydev.com/#","");
+						var release = record.get('Release');
+						var iteration = record.get('Iteration');
+						
+						if (record.get('Release'))
+							release = record.get('Release')._refObjectName;
+						
+						if (record.get('Iteration'))
+							iteration = record.get('Iteration')._refObjectName;
+							
+						sumPlanEst += record.get("PlanEstimate") != null ? parseFloat(record.get("PlanEstimate")) : 0;
+						sumDevEst += record.get("PlanDevEstDays") != null ? parseFloat(record.get("PlanDevEstDays")) : 0;
+						sumQaEst += record.get("PlanQAEstDays") != null ? parseFloat(record.get("PlanQAEstDays")) : 0;
+						sumTaskEst += record.get("TaskEstimateTotal") != null ? parseFloat(record.get("TaskEstimateTotal")) : 0;
+						 
+						 
+                        records.push({  
+						    FormattedID: link,
+                            Name: record.get('Name'),
+                            ScheduleState: record.get('ScheduleState'),
+                            Release: release,
+							Iteration: iteration,
+							Project: record.get('Project')._refObjectName,
+							PlanEst:record.get('PlanEstimate'),
+							PlanDevEst:record.get('PlanDevEstDays'),
+							PlanQAEst:record.get('PlanQAEstDays'),
+							TaskEstimateTotal:record.get('TaskEstimateTotal')
+                        });
+						
+						var pdev = record.get('PlanDevEstDays') != null ? record.get('PlanDevEstDays') : " ";
+						var pqa = record.get('PlanQAEstDays') != null ? record.get('PlanQAEstDays') : " ";
+						
+						 csvdata.push(record.get('FormattedID') + ',' + record.get('Name') + ',' + record.get('ScheduleState') +',' + release +',' + iteration + ',' + 
+						record.get('Project')._refObjectName + ',' + record.get('PlanEstimate') + ',' + pdev + ',' + pqa );
+						
+                    });
+                    this.down('#grid').removeAll();
+					
+							var htmlstr = '<span class="sum"><p><b><u>Summary:</u></b>:</span> <span class="sum">  <b>Sum Plan Est. = </b> ' + sumPlanEst.toFixed(2) + 
+						' </span> <span class="sum"> <b>Sum Dev Est. = </b>' + sumDevEst.toFixed(2) +' </span> <span class="sum"><b> Sum QA Est. = </b>' + sumQaEst.toFixed(2) + ' </span> <span class="sum"><b> Sum Task Est. = </b>' + sumTaskEst.toFixed(2) + ' </span></p> <br>';
+									
+						this.down('#grid').add(
+                        {
+							xtype: 'component',
+							html: htmlstr
+						}
+                    );
+					
+                    this.grid = this.down('#grid').add({
+                        xtype: 'rallygrid',
+                        store: Ext.create('Rally.data.custom.Store', {
+                            data: records,
+                            pageSize: 25
+                        }),
+                        columnCfgs: [
+						
+                            {
+                              text: 'FormattedID', dataIndex: 'FormattedID'   
+                            },
+                            {
+                                text: 'Name', dataIndex: 'Name', flex: 1
+                            },
+                            {
+                                text: 'Schedule State', dataIndex: 'ScheduleState'
+                            },
+                            {
+                                text: 'Release', dataIndex: 'Release',flex: 1
+                            },
+							{
+                                text: 'Iteration', dataIndex: 'Iteration',flex: 1
+                            },
+							{
+                                text: 'Project', dataIndex: 'Project',flex: 1
+                            },
+							{
+                                text: 'Plan Est', dataIndex: 'PlanEst'
+                            },
+							{
+                                text: 'Plan Dev Est', dataIndex: 'PlanDevEst'
+                            },
+							{
+                                text: 'Plan QA Est', dataIndex: 'PlanQAEst'
+                            },
+														{
+                                text: 'Task Est', dataIndex: 'TaskEstimateTotal'
+                            }
+                        ],
+							bbar : [
+							{
+							xtype: 'component',
+							html: '<span id="downloadify"> </span> '
+						}]
+                    });
+					
+					this.down('#ClickButton').child().setText("Generate Report");
+					loadswf();
+                }
+            });
+
+            Rally.launchApp('CustomApp', {
+                name: 'Grid With Freeform Data Example'
+            });
+        });
+    </script>
+
+    <style type="text/css">
+	 .StandardMargin { 
+               margin: 8px;
+        }
+		.sum 
+		 { 
+               margin: 8px;
+        }
+    </style>
+</head>
+<body></body>
+</html>
+

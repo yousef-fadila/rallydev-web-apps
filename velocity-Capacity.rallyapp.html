@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Velocity Vs. Capacity</title>
+
+    <script type="text/javascript" src="/apps/2.0rc1/sdk.js"></script>
+
+    <script type="text/javascript">
+	var SprintDetails = new Array();
+	var allIterations;
+        Rally.onReady(function() {
+            Ext.define('CustomApp', {
+                extend: 'Rally.app.App',
+                componentCls: 'app',
+					
+            autoScroll: 'true',
+                items: [
+                    {
+                        xtype: 'container',
+                        itemId: 'iterationFilter',
+						style: {
+							margin: '5px'
+							}
+                    },
+                    {
+                        xtype: 'container',
+                        itemId: 'grid',
+						style: {
+							margin: '10px',
+							}
+                    },
+					{
+                        xtype: 'container',
+                        itemId: 'AllIterationsGrid',
+						style: {
+							margin: '10px',
+							}
+                    }
+					
+                ],
+                
+                launch: function() {
+                    this.down('#iterationFilter').add({
+                        xtype: 'rallyiterationcombobox',
+                        itemId: 'iterationComboBox',
+						hidden: true,
+						 storeConfig: {
+							listeners: {
+								 load: function(store, records){
+									SprintDetails = records;
+									
+									this._queryForAllIterationsStories();
+								},
+								 scope: this
+							}
+						},
+                        listeners: {
+                            change: this._queryForAllIterationsStories,
+                           // ready: this._queryForAllIterationsStories,
+                            scope: this
+                        }
+                    });
+                },
+               
+				 _queryForAllIterationsStories: function() {
+					var allIterQF;
+						allIterQF = new Rally.data.QueryFilter({
+									property: "Iteration.EndDate",
+									operator: "<=",
+									value: Rally.util.DateTime.toIsoString(SprintDetails[0].get('EndDate'))
+								}).and(new Rally.data.QueryFilter({
+									property: "Iteration.StartDate",
+									operator: ">=",
+									value: Rally.util.DateTime.toIsoString( SprintDetails[SprintDetails.length - 1].get('StartDate'))
+								})).and(new Rally.data.QueryFilter({
+									property: "Project.ObjectID",
+									operator: "=",
+									value: this.getContext().getProject().ObjectID
+								}));
+								
+						/*for (var i = 0; i < SprintDetails.length; i++) {
+							 var qf = new Rally.data.QueryFilter({
+									property: "Iteration.Name",
+									operator: "=",
+									value: SprintDetails[i].get('Name')
+								}).and(new Rally.data.QueryFilter({
+									property: "Iteration.StartDate",
+									operator: "=",
+									value: Rally.util.DateTime.toIsoString( SprintDetails[i].get('StartDate'))
+								})).and(new Rally.data.QueryFilter({
+									property: "Iteration.EndDate",
+									operator: "=",
+									value: Rally.util.DateTime.toIsoString( SprintDetails[i].get('EndDate'))
+								}));
+								
+								if (i == 0)
+								allIterQF = qf;
+								else
+								allIterQF = allIterQF.or(qf);
+						}
+						*/
+                   
+				   Ext.create('Rally.data.WsapiDataStore', {
+                        model: 'UserIterationCapacity',
+                        autoLoad: true,
+						context: {
+							projectScopeUp: false,
+                            projectScopeDown: false,
+						},
+                        fetch: ['Capacity','Iteration'],
+                        filters: allIterQF, 
+						limit : Infinity,
+                        listeners: {
+                            load: this._onAllIterationDataLoaded,
+                            scope: this
+                        }
+						
+                    });
+				
+                },
+				
+				_onAllIterationDataLoaded : function(store, data) {
+				
+					allIterations = new Object();
+					for (var i = 0; i < SprintDetails.length; i++) {
+						allIterations[SprintDetails[i].get('Name')]= new Object();
+					}
+					
+					for (var i = 0; i < SprintDetails.length; i++) {
+						allIterations[SprintDetails[i].get('Name')].Capacity = 0
+						allIterations[SprintDetails[i].get('Name')].Velocity = 0;
+						allIterations[SprintDetails[i].get('Name')].EndDate = SprintDetails[i].get('EndDate');
+					}
+					
+					
+                   
+				
+						Ext.Array.each(data, function(record) {
+						
+						var id = record.get('Iteration')._refObjectName;
+						
+						if (allIterations[id]){
+							
+							 allIterations[id].Capacity += record.get("Capacity") != null ? parseFloat(record.get("Capacity")) : 0;
+						}
+                     
+						});
+					
+					 Ext.create('Rally.data.WsapiDataStore', {
+                        model: 'UserStory',
+                        autoLoad: true,
+                        fetch: ['PlanEstimate','Iteration','AcceptedDate'],
+                        filters: [
+							{
+								property: 'ScheduleState',
+								operator: '=',
+								value: 'Accepted'
+							},
+								{
+								property: 'Iteration',
+								operator: '!=',
+								value: 'null'
+							}
+						],
+						limit : Infinity,
+                        listeners: {
+                            load: this._onCapacityLoad,
+                            scope: this
+                        }
+						
+                    });
+				},
+					
+					
+					
+				
+				
+				_onCapacityLoad : function(store, data) {
+				 var records = [];
+				
+				
+						Ext.Array.each(data, function(record) {
+						var id = record.get('Iteration')._refObjectName;
+						
+						if (allIterations[id]){
+						//	var EndDate = new Date(allIterations[id].EndDate);
+						//	var AcceptedDate = new Date(record.get("AcceptedDate"));
+						//	if (AcceptedDate <= EndDate )
+						//	{
+						//		console.log(allIterations[id].EndDate + " " + record.get("AcceptedDate"));
+							 allIterations[id].Velocity += record.get("PlanEstimate") != null ? parseFloat(record.get("PlanEstimate")) : 0;
+							 
+						//	 }
+						}
+                       
+						});
+					
+				
+					var flag = false;
+					var avgCapacity = 0;
+					var avgVelocity = 0;
+					var num_of_sprints = 3;
+					for (var i = 0; i < SprintDetails.length; i++) {
+						var IterationName;
+							if(SprintDetails[i].get('EndDate') < Date.now())
+			                                {
+						
+						if (num_of_sprints)
+						{
+						   avgCapacity += allIterations[SprintDetails[i].get('Name')].Capacity;
+						   avgVelocity += allIterations[SprintDetails[i].get('Name')].Velocity;
+						   num_of_sprints--;
+						}
+						
+							var velocity_capacity = allIterations[SprintDetails[i].get('Name')].Velocity / allIterations[SprintDetails[i].get('Name')].Capacity * 100;
+							
+						records.push({
+								Name: SprintDetails[i].get('Name'),
+								Capacity: allIterations[SprintDetails[i].get('Name')].Capacity.toFixed(2),
+								velocity: allIterations[SprintDetails[i].get('Name')].Velocity.toFixed(2),
+								velocity_capacity: isNaN(velocity_capacity)? 0 : velocity_capacity.toFixed(0) + " %"
+							});
+                                               }
+						
+					}
+					
+					
+            
+                    var customStore = Ext.create('Rally.data.custom.Store', {
+                        data: records,
+                        pageSize: 20
+                    });
+            
+                    if(!this.AllIterationsGrid) {
+                        this.AllIterationsGrid = this.down('#AllIterationsGrid').add({
+                            xtype: 'rallygrid',
+                            store: customStore,
+			    showPagingToolbar : true,
+                            columnCfgs: [
+                                { text: 'Sprint Name', dataIndex: 'Name', width:250 },
+                                { text: 'Capacity', dataIndex: 'Capacity'},
+                                { text: 'Velocity', dataIndex: 'velocity' },
+								{ text: 'Velocity / Capacity', dataIndex: 'velocity_capacity' }
+								
+                            ]
+                        });
+                    } else {
+                        this.AllIterationsGrid.reconfigure(customStore);
+                    }
+					
+				
+					
+					// Add average HTML
+					avgCapacity =  avgCapacity/3;
+					avgVelocity =  avgVelocity/3;
+					var avgVelocity_capacity = avgVelocity/avgCapacity * 100;
+					var htmlstr = '<p><b><u>Avg. of the last 3 sprints</u></b>: </p> <b>Avg. Capacity = </b> ' + avgCapacity.toFixed(2) + 
+									'<br> <b> Avg. Velocity = </b>' + avgVelocity.toFixed(2) +'<br> <b> Velocity/Capacity = </b>' + avgVelocity_capacity.toFixed(0) + " %<br>";
+									
+						this.down('#iterationFilter').add(
+                        {
+							xtype: 'component',
+							html: htmlstr
+						}
+                    );
+					
+				 }
+				
+				
+            });
+
+            Rally.launchApp('CustomApp', {
+                name: 'Stories By Iteration'
+            });
+        });
+    </script>
+
+    <style type="text/css">
+        .app { 
+            margin: 20px;
+        }
+		
+    </style>
+</head>
+<body></body>
+</html>

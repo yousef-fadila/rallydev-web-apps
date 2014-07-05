@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stories By Iteration</title>
+
+    <script type="text/javascript" src="/apps/2.0p2/sdk.js"></script>
+
+    <script type="text/javascript">
+	var SprintDetails;
+        Rally.onReady(function() {
+            Ext.define('CustomApp', {
+                extend: 'Rally.app.App',
+                componentCls: 'app',
+            autoScroll: 'true',
+                items: [
+                    {
+                        xtype: 'container',
+                        itemId: 'iterationFilter',
+						style: {
+							margin: '5px'
+							}
+                    },
+                    {
+                        xtype: 'container',
+                        itemId: 'grid',
+						style: {
+							margin: '10px',
+							}
+                    },
+					{
+                        xtype: 'container',
+                        itemId: 'AllIterationsGrid',
+						style: {
+							margin: '10px',
+							}
+                    },
+					{
+                        xtype: 'container',
+                        itemId: 'maturityBoard',
+						style: {
+							margin: '100px 5px 5px 5px'
+							}
+                    }
+                ],
+                
+                launch: function() {
+                    this.down('#iterationFilter').add({
+                        xtype: 'rallyiterationcombobox',
+                        itemId: 'iterationComboBox',
+						 storeConfig: {
+							listeners: {
+								 load: function(store, records){
+								
+									//console.log(records); 
+									//	console.log(records[0].get("EndDate"));
+									//	console.log(Ext.Date.format(records[0].get("EndDate"), "Y-m-d") + " " + records[0].get("Name"));
+										SprintDetails = records;
+								}
+							}
+						},
+                        listeners: {
+                            change: this._queryForStories,
+                            ready: this._queryForStories,
+                            scope: this
+                        }
+                    });
+                },
+                
+                _queryForStories: function() {
+                    Ext.create('Rally.data.WsapiDataStore', {
+                        model: 'UserStory',
+                        autoLoad: true,
+                        fetch: ['FormattedID','PlanEstimate', 'UserStoryMaturity'],
+                        filters: [this.down('#iterationComboBox').getQueryFromSelected()], 
+						limit : Infinity,
+                        listeners: {
+                            load: this._onDataLoaded,
+                            scope: this
+                        }
+						
+                    });
+					
+					//console.log(this.down('#iterationComboBox').getQueryFromSelected().toString() );
+					
+					
+					
+                },
+                
+				_onDataLoaded: function(store, data) {
+                    var records = [];
+					var withoutMaturityCount = 0;
+					var totalmaturityCount = 0;
+					var avgMaturity = 0;
+					var totalCount = 0;
+					var plan13 = 0;
+					var plan45 = 0;
+                    Ext.Array.each(data, function(record) {
+						maturityValue = record.get('UserStoryMaturity').charAt(0);
+						if (maturityValue!="")
+						{
+							totalmaturityCount++;
+							var maturityInt = parseInt(maturityValue);
+							
+							avgMaturity += maturityInt;
+							
+							if (maturityInt <= 3)
+								plan13 += record.get('PlanEstimate');
+							else
+								plan45 += record.get('PlanEstimate');	
+							//console.log("\n" + maturityInt + "#" + avgMaturity + "#" + totalmaturityCount + " " + "\n");	
+						}
+						else
+							withoutMaturityCount++;
+							
+						
+						totalCount++;
+                     //  
+                    });
+					//request change form Sigal, count blank as 1.
+					avgMaturity = (avgMaturity + withoutMaturityCount) / (totalmaturityCount + withoutMaturityCount);
+					records.push({
+                            Name: this.down('#iterationComboBox').getRawValue(),
+                            WithoutMaturityCount: withoutMaturityCount + "/" + totalCount,
+                            AvgMaturity: avgMaturity.toFixed(2),
+							Plan13: plan13.toFixed(2),
+							Plan45: plan45.toFixed(2)
+                        });
+            
+                    var customStore = Ext.create('Rally.data.custom.Store', {
+                        data: records,
+                        pageSize: 10
+                    });
+            
+                    if(!this.grid) {
+                        this.grid = this.down('#grid').add({
+                            xtype: 'rallygrid',
+                            store: customStore,
+							showPagingToolbar : false,
+                            columnCfgs: [
+                                { text: 'Sprint Name', dataIndex: 'Name' },
+                                { text: 'US Without Maturity', dataIndex: 'WithoutMaturityCount'},
+                                { text: 'AVG. Maturity', dataIndex: 'AvgMaturity' },
+								{ text: 'Plan EST[1-3]', dataIndex: 'Plan13' },
+								{ text: 'Plan EST[4-5]', dataIndex: 'Plan45' }
+                            ]
+                        });
+                    } else {
+                        this.grid.reconfigure(customStore);
+                    }
+					
+					
+					if (!this.cardBoard)
+					{
+						var cardBoardConfig = {
+							xtype: 'rallycardboard',
+							types: ['User Story'],
+							attribute: 'UserStoryMaturity',
+							storeConfig: {
+								filters: [this.down('#iterationComboBox').getQueryFromSelected()]
+							}
+						};
+						this.cardBoard = this.down('#maturityBoard').add(cardBoardConfig);     
+					}
+					else
+					{
+							var config = {
+							storeConfig: {
+								filters: [this.down('#iterationComboBox').getQueryFromSelected()]
+							}
+						};
+
+						this.cardBoard.refresh(config);
+					}
+					
+					// add button
+					if (!this.button)
+					{
+						this.button = Ext.create('Ext.Container', {
+									items: [{
+										xtype: 'rallybutton',
+										text: 'Show/Hide the average of all iterations',
+										handler: function() {
+											if(!this.AllIterationsGrid)
+											{
+												this.button.child().setText("Please wait...");
+												this._queryForAllIterationsStories();
+											}
+											else
+												this.AllIterationsGrid.setVisible(!this.AllIterationsGrid.isVisible());
+											//this.button.setVisible(false);
+											
+											
+										},
+										scope: this
+									}],
+									renderTo: Ext.getBody().dom
+								});
+						this.down('#AllIterationsGrid').add(this.button); 
+					}
+					//console.log(records); 
+									//	console.log(records[0].get("EndDate"));
+									//	console.log(Ext.Date.format(records[0].get("EndDate"), "Y-m-d") + " " + records[0].get("Name"));
+										
+									
+									
+										//console.log(allIterQF.toString());
+
+                },
+				
+				 _queryForAllIterationsStories: function() {
+					var allIterQF;
+						allIterQF = new Rally.data.QueryFilter({
+									property: "Iteration.EndDate",
+									operator: "<=",
+									value: Rally.util.DateTime.toIsoString(SprintDetails[0].get('EndDate'))
+								}).and(new Rally.data.QueryFilter({
+									property: "Iteration.StartDate",
+									operator: ">=",
+									value: Rally.util.DateTime.toIsoString( SprintDetails[SprintDetails.length - 1].get('StartDate'))
+								}));
+						/*for (var i = 0; i < SprintDetails.length; i++) {
+							 var qf = new Rally.data.QueryFilter({
+									property: "Iteration.Name",
+									operator: "=",
+									value: SprintDetails[i].get('Name')
+								}).and(new Rally.data.QueryFilter({
+									property: "Iteration.StartDate",
+									operator: "=",
+									value: Rally.util.DateTime.toIsoString( SprintDetails[i].get('StartDate'))
+								})).and(new Rally.data.QueryFilter({
+									property: "Iteration.EndDate",
+									operator: "=",
+									value: Rally.util.DateTime.toIsoString( SprintDetails[i].get('EndDate'))
+								}));
+								
+								if (i == 0)
+								allIterQF = qf;
+								else
+								allIterQF = allIterQF.or(qf);
+						}
+						*/
+                   
+				   Ext.create('Rally.data.WsapiDataStore', {
+                        model: 'UserStory',
+                        autoLoad: true,
+                        fetch: ['FormattedID','PlanEstimate', 'UserStoryMaturity','Iteration'],
+                        filters: allIterQF, 
+						limit : Infinity,
+                        listeners: {
+                            load: this._onAllIterationDataLoaded,
+                            scope: this
+                        }
+						
+                    });
+				
+                },
+				
+				_onAllIterationDataLoaded : function(store, data) {
+					this.button.child().setText("Show/Hide the average of all iterations");
+					var allIterations = new Object();
+					for (var i = 0; i < SprintDetails.length; i++) {
+						allIterations[SprintDetails[i].get('Name')]= new Object();
+					}
+					
+					for (var i = 0; i < SprintDetails.length; i++) {
+						allIterations[SprintDetails[i].get('Name')].withoutMaturityCount=0
+						allIterations[SprintDetails[i].get('Name')].totalmaturityCount = 0;
+						allIterations[SprintDetails[i].get('Name')].avgMaturity = 0;
+						allIterations[SprintDetails[i].get('Name')].totalCount = 0;
+						allIterations[SprintDetails[i].get('Name')].plan13 = 0;
+						allIterations[SprintDetails[i].get('Name')].plan45 = 0;
+					}
+					
+					
+                    var records = [];
+				
+                    Ext.Array.each(data, function(record) {
+						var id = record.get('Iteration')._refObjectName;
+						
+						if (allIterations[id]){
+							maturityValue = record.get('UserStoryMaturity').charAt(0);
+							if (maturityValue!="")
+							{
+								allIterations[id].totalmaturityCount++;
+								var maturityInt = parseInt(maturityValue);
+								
+								allIterations[id].avgMaturity += maturityInt;
+								
+								if (maturityInt <= 3)
+									allIterations[id].plan13 += record.get('PlanEstimate');
+								else
+									allIterations[id].plan45 += record.get('PlanEstimate');	
+								//console.log("\n" + maturityInt + "#" + avgMaturity + "#" + totalmaturityCount + " " + "\n");	
+							}
+							else
+								allIterations[id].withoutMaturityCount++;
+
+							allIterations[id].totalCount++;
+						
+						}
+                     //  
+                    });
+					
+					
+					for (var i = 0; i < SprintDetails.length; i++) {
+					if (this.down('#iterationComboBox').getRawValue() == SprintDetails[i].get('Name'))
+					continue;
+					//request change from sigal, count blank as 1.
+					allIterations[SprintDetails[i].get('Name')].avgMaturity += allIterations[SprintDetails[i].get('Name')].withoutMaturityCount;
+					allIterations[SprintDetails[i].get('Name')].avgMaturity/= (allIterations[SprintDetails[i].get('Name')].totalmaturityCount + allIterations[SprintDetails[i].get('Name')].withoutMaturityCount) ;
+					records.push({
+                            Name: SprintDetails[i].get('Name'),
+                            WithoutMaturityCount: allIterations[SprintDetails[i].get('Name')].withoutMaturityCount + "/" + allIterations[SprintDetails[i].get('Name')].totalCount,
+                            AvgMaturity: allIterations[SprintDetails[i].get('Name')].avgMaturity.toFixed(2),
+							Plan13: allIterations[SprintDetails[i].get('Name')].plan13.toFixed(2),
+							Plan45: allIterations[SprintDetails[i].get('Name')].plan45.toFixed(2)
+                        });
+						
+					}
+					
+            
+                    var customStore = Ext.create('Rally.data.custom.Store', {
+                        data: records,
+                        pageSize: 40
+                    });
+            
+                    if(!this.AllIterationsGrid) {
+                        this.AllIterationsGrid = this.down('#AllIterationsGrid').add({
+                            xtype: 'rallygrid',
+                            store: customStore,
+							showPagingToolbar : false,
+                            columnCfgs: [
+                                { text: 'Sprint Name', dataIndex: 'Name' },
+                                { text: 'US Without Maturity', dataIndex: 'WithoutMaturityCount'},
+                                { text: 'AVG. Maturity', dataIndex: 'AvgMaturity' },
+								{ text: 'Plan EST[1-3]', dataIndex: 'Plan13' },
+								{ text: 'Plan EST[4-5]', dataIndex: 'Plan45' }
+                            ]
+                        });
+                    } else {
+                        this.AllIterationsGrid.reconfigure(customStore);
+                    }
+				 }
+				
+				
+				
+            });
+
+            Rally.launchApp('CustomApp', {
+                name: 'Stories By Iteration'
+            });
+        });
+    </script>
+
+    <style type="text/css">
+        .app { 
+            margin: 20px;
+        }
+		
+    </style>
+</head>
+<body></body>
+</html>
