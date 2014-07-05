@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>orphan Stories</title>
+
+    <script type="text/javascript" src="/apps/2.0p2/sdk.js"></script>
+
+    <script type="text/javascript">
+	var subject = "?Subject=[ Rally Notification - ";
+	var body = "User story you own hasn't assigned to any parent&body= for more info see erroneous stories: https://rally1.rallydev.com/#/4361522032ud/custom/7030454244";
+	function sendMail(userURL, FormattedID)
+			{
+			 xmlhttp=new XMLHttpRequest();
+			 
+			 xmlhttp.onreadystatechange=function(){
+						 if (xmlhttp.readyState==4 && xmlhttp.status==200)
+						{
+	                        var text = xmlhttp.responseText;
+	                       var usr = JSON.parse(text);
+					     //  alert(usr.User.EmailAddress) 
+						 self.location= "mailto:" + usr.User.EmailAddress + subject + FormattedID + " ] "+ body ;
+						}
+	                    }
+			 xmlhttp.open("GET",userURL,true);
+			xmlhttp.send();
+			}
+			
+        Rally.onReady(function() {
+            Ext.define('CustomApp', {
+                extend: 'Rally.app.App',
+                componentCls: 'app',
+				autoScroll: 'true',
+                launch: function() {
+                    Ext.create('Rally.data.WsapiDataStore', {
+                        model: 'UserStory',
+                        autoLoad: true,
+						context: {
+						projectScopeUp: false,
+						},
+                        listeners: {
+                            load: this._onDataLoaded,
+                            scope: this
+                        },
+						// var queryCriteria = '((StoryType != "Item") and (Parent = null))';
+						filters: [
+							{
+								property: 'StoryType',
+								operator: '!=',
+								value: 'Item'
+							},
+							{
+								property: 'parent',
+								operator: '=',
+								value: 'null'
+							}
+						],
+                    });
+                },
+            
+                _onDataLoaded: function(store1, data) {
+                    var records = [];
+                   Ext.Array.each(data, function(record) {
+                        //Perform custom actions with the data here
+                        //Calculations, etc.
+						var linkBuilder = Ext.create('Rally.util.DetailLinkBuilder').inFrame(true);
+					    var link =  linkBuilder.build(record.get('FormattedID'), record.get('_ref'), true);
+						var owner = "unknown";
+						var release = record.get('Release');
+						var iteration = record.get('Iteration');
+						
+						if (record.get('Release'))
+							release = linkBuilder.build(record.get('Release')._refObjectName, record.get('Release')._ref, true);
+						
+						if (record.get('Iteration'))
+							iteration = linkBuilder.build(record.get('Iteration')._refObjectName, record.get('Iteration')._ref, true);
+						  
+                        if (record.get('Owner'))
+						{
+						 owner = "<a href = \"javascript:sendMail('" + record.get('Owner')._ref + "', '"+ record.get('FormattedID')+ "');\"> " + record.get('Owner')._refObjectName + "</a>";
+						 
+						}
+						
+                        records.push({
+	  
+						    FormattedID: link,
+                            Name: record.get('Name'),
+                            ScheduleState: record.get('ScheduleState'),
+                            Release: release,
+							Iteration: iteration,
+							Project: record.get('Project')._refObjectName,
+							Owner: owner 
+                        });
+						
+                    });
+            
+                    this.add({
+                        xtype: 'rallygrid',
+                        store: Ext.create('Rally.data.custom.Store', {
+                            data: records,
+                            pageSize: 25
+                        }),
+                        columnCfgs: [
+						
+                            {
+                              text: 'FormattedID', dataIndex: 'FormattedID'   
+                            },
+                            {
+                                text: 'Name', dataIndex: 'Name', flex: 1
+                            },
+                            {
+                                text: 'Schedule State', dataIndex: 'ScheduleState'
+                            },
+							{
+                                text: 'Story Type', dataIndex: 'StoryType'
+                            },
+                            {
+                                text: 'Release', dataIndex: 'Release'
+                            },
+							{
+                                text: 'Iteration', dataIndex: 'Iteration'
+                            },
+							{
+                                text: 'Project', dataIndex: 'Project'
+                            },
+							{
+                                text: 'Notify Owner', dataIndex: 'Owner'
+                            }
+                        ]
+                    });
+                }
+            });
+
+            Rally.launchApp('CustomApp', {
+                name: 'Grid With Freeform Data Example'
+            });
+        });
+    </script>
+
+    <style type="text/css">
+    </style>
+</head>
+<body></body>
+</html>
